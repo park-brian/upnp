@@ -21,7 +21,7 @@ function parseXml(xmlString) {
  * @returns {string} The text content if found; otherwise, an empty string.
  */
 function extractTextFromTag(parentEl, tag) {
-  var el = parentEl.getElementsByTagName(tag)[0];
+  const el = parentEl.getElementsByTagName(tag)[0];
   return el ? el.textContent : "";
 }
 
@@ -30,10 +30,8 @@ function extractTextFromTag(parentEl, tag) {
  * @returns {string} The local IP address, or "127.0.0.1" if none is found.
  */
 function findLocalIp() {
-  var nets = Object.values(networkInterfaces()).flat();
-  var info = nets.find(function(net) {
-    return net.family === "IPv4" && !net.internal;
-  });
+  const nets = Object.values(networkInterfaces()).flat();
+  const info = nets.find((net) => net.family === "IPv4" && !net.internal);
   return info ? info.address : "127.0.0.1";
 }
 
@@ -43,7 +41,7 @@ function findLocalIp() {
  * @returns {object} An object containing the port property.
  */
 function normalizePort(port) {
-  if (typeof port === "number") return { port: port };
+  if (typeof port === "number") return { port };
   if (typeof port === "string" && !isNaN(port)) return { port: Number(port) };
   return port || {};
 }
@@ -53,8 +51,7 @@ function normalizePort(port) {
  * @param {object} [opts={}] - Options containing public and private definitions.
  * @returns {object} An object with normalized remote and internal port options.
  */
-function normalizeOpts(opts) {
-  opts = opts || {};
+function normalizeOpts(opts = {}) {
   return {
     remote: normalizePort(opts.public),
     internal: normalizePort(opts.private)
@@ -66,11 +63,10 @@ function normalizeOpts(opts) {
  * @param {number} [timeout=DEFAULT_TIMEOUT] - Timeout in milliseconds.
  * @returns {Promise<object>} Resolves with an object containing the gateway location.
  */
-function findGateway(timeout) {
-  timeout = timeout || DEFAULT_TIMEOUT;
-  return new Promise(function(resolve, reject) {
-    var sock = createSocket("udp4");
-    var msg = Buffer.from(
+function findGateway(timeout = DEFAULT_TIMEOUT) {
+  return new Promise((resolve, reject) => {
+    const sock = createSocket("udp4");
+    const msg = Buffer.from(
       "M-SEARCH * HTTP/1.1\r\n" +
         "HOST: 239.255.255.250:1900\r\n" +
         "MAN: \"ssdp:discover\"\r\n" +
@@ -78,21 +74,21 @@ function findGateway(timeout) {
         "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n"
     );
 
-    var timer = setTimeout(function() {
+    const timer = setTimeout(() => {
       sock.close();
       reject(new Error("Gateway discovery timed out"));
     }, timeout);
 
-    sock.on("error", function(err) {
+    sock.on("error", (err) => {
       clearTimeout(timer);
       sock.close();
       reject(err);
     });
 
-    sock.on("message", function(data) {
+    sock.on("message", (data) => {
       clearTimeout(timer);
       sock.close();
-      var match = data.toString().match(/LOCATION:\s*(.*)/i);
+      const match = data.toString().match(/LOCATION:\s*(.*)/i);
       if (match && match[1]) {
         resolve({ location: match[1].trim() });
       } else {
@@ -100,7 +96,7 @@ function findGateway(timeout) {
       }
     });
 
-    sock.send(msg, 1900, "239.255.255.250", function(err) {
+    sock.send(msg, 1900, "239.255.255.250", (err) => {
       if (err) {
         clearTimeout(timer);
         sock.close();
@@ -116,8 +112,8 @@ function findGateway(timeout) {
  * @returns {Promise<Document>} The parsed XML document.
  */
 async function fetchXml(url) {
-  var res = await fetch(url);
-  var text = await res.text();
+  const res = await fetch(url);
+  const text = await res.text();
   return parseXml(text);
 }
 
@@ -131,24 +127,24 @@ function searchService(device, types) {
   if (!device) return null;
 
   // Search within serviceList
-  var serviceList = device.getElementsByTagName("serviceList")[0];
+  const serviceList = device.getElementsByTagName("serviceList")[0];
   if (serviceList) {
-    var services = serviceList.getElementsByTagName("service");
-    for (var i = 0; i < services.length; i++) {
-      var service = services[i];
-      var serviceTypeEl = service.getElementsByTagName("serviceType")[0];
-      if (serviceTypeEl && types.indexOf(serviceTypeEl.textContent) !== -1) {
+    const services = serviceList.getElementsByTagName("service");
+    for (let i = 0; i < services.length; i++) {
+      const service = services[i];
+      const serviceTypeEl = service.getElementsByTagName("serviceType")[0];
+      if (serviceTypeEl && types.includes(serviceTypeEl.textContent)) {
         return service;
       }
     }
   }
 
   // Recursively search within deviceList
-  var deviceList = device.getElementsByTagName("deviceList")[0];
+  const deviceList = device.getElementsByTagName("deviceList")[0];
   if (deviceList) {
-    var devices = deviceList.getElementsByTagName("device");
-    for (var j = 0; j < devices.length; j++) {
-      var found = searchService(devices[j], types);
+    const devices = deviceList.getElementsByTagName("device");
+    for (let i = 0; i < devices.length; i++) {
+      const found = searchService(devices[i], types);
       if (found) return found;
     }
   }
@@ -162,23 +158,19 @@ function searchService(device, types) {
  * @param {object} [args={}] - Action arguments.
  * @returns {string} The SOAP envelope as an XML string.
  */
-function buildSoapEnvelope(serviceType, action, args) {
-  args = args || {};
-  var argsXml = Object.entries(args)
-    .map(function(entry) {
-      var key = entry[0],
-        val = entry[1];
-      return "<" + key + ">" + val + "</" + key + ">";
-    })
+function buildSoapEnvelope(serviceType, action, args = {}) {
+  const argsXml = Object.entries(args)
+    .map(([key, val]) => `<${key}>${val}</${key}>`)
     .join("");
+
   return (
     '<?xml version="1.0"?>' +
     '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" ' +
     's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">' +
     "<s:Body>" +
-    '<u:' + action + ' xmlns:u="' + serviceType + '">' +
+    `<u:${action} xmlns:u="${serviceType}">` +
     argsXml +
-    "</u:" + action + ">" +
+    `</u:${action}>` +
     "</s:Body></s:Envelope>"
   );
 }
@@ -192,28 +184,27 @@ function buildSoapEnvelope(serviceType, action, args) {
  * @returns {Promise<Element>} The SOAP response body element.
  * @throws {Error} If a SOAP fault is encountered.
  */
-async function soapRequest(url, serviceType, action, args) {
-  args = args || {};
-  var envelope = buildSoapEnvelope(serviceType, action, args);
-  var res = await fetch(url, {
+async function soapRequest(url, serviceType, action, args = {}) {
+  const envelope = buildSoapEnvelope(serviceType, action, args);
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": 'text/xml; charset="utf-8"',
-      SOAPAction: '"' + serviceType + "#" + action + '"'
+      SOAPAction: `"${serviceType}#${action}"`
     },
     body: envelope
   });
-  var text = await res.text();
-  var doc = parseXml(text);
+  const text = await res.text();
+  const doc = parseXml(text);
 
   // Check for SOAP fault
-  var fault = doc.getElementsByTagNameNS("http://schemas.xmlsoap.org/soap/envelope/", "Fault")[0];
+  const fault = doc.getElementsByTagNameNS("http://schemas.xmlsoap.org/soap/envelope/", "Fault")[0];
   if (fault) {
-    var upnpError = fault.getElementsByTagName("UPnPError")[0];
+    const upnpError = fault.getElementsByTagName("UPnPError")[0];
     if (upnpError) {
-      var errorCode = extractTextFromTag(upnpError, "errorCode");
-      var errorDescription = extractTextFromTag(upnpError, "errorDescription");
-      throw new Error("UPnPError " + errorCode + ": " + errorDescription);
+      const errorCode = extractTextFromTag(upnpError, "errorCode");
+      const errorDescription = extractTextFromTag(upnpError, "errorDescription");
+      throw new Error(`UPnPError ${errorCode}: ${errorDescription}`);
     }
     throw new Error("SOAP fault encountered");
   }
@@ -228,8 +219,8 @@ export default class UPnP {
    * Creates an instance of UPnP.
    * @param {number} [timeout=DEFAULT_TIMEOUT] - Discovery timeout in milliseconds.
    */
-  constructor(timeout) {
-    this.timeout = timeout || DEFAULT_TIMEOUT;
+  constructor(timeout = DEFAULT_TIMEOUT) {
+    this.timeout = timeout;
     this._gateway = null;
   }
 
@@ -249,33 +240,34 @@ export default class UPnP {
   async _findGateway() {
     if (this._gateway) return this._gateway;
 
-    var gatewayData = await findGateway(this.timeout);
-    var location = gatewayData.location;
-    var desc = await fetchXml(location);
-    var root = desc.documentElement;
-    var device = root.getElementsByTagName("device")[0];
+    const gatewayData = await findGateway(this.timeout);
+    const location = gatewayData.location;
+    const desc = await fetchXml(location);
+    const root = desc.documentElement;
+    const device = root.getElementsByTagName("device")[0];
+    
     if (!device) {
       throw new Error("Invalid device description: no device element found");
     }
 
-    var service = searchService(device, [
+    const service = searchService(device, [
       "urn:schemas-upnp-org:service:WANIPConnection:1",
       "urn:schemas-upnp-org:service:WANPPPConnection:1"
     ]);
     if (!service) throw new Error("UPnP service not found in device description");
 
-    var controlUrl = extractTextFromTag(service, "controlURL");
+    let controlUrl = extractTextFromTag(service, "controlURL");
     if (!controlUrl) {
       throw new Error("Control URL not found in service description");
     }
     if (!/^https?:\/\//i.test(controlUrl)) {
-      var base = extractTextFromTag(root, "URLBase") || location;
+      const base = extractTextFromTag(root, "URLBase") || location;
       controlUrl = new URL(controlUrl, base).href;
     }
 
     this._gateway = {
       serviceType: extractTextFromTag(service, "serviceType"),
-      controlUrl: controlUrl
+      controlUrl
     };
     return this._gateway;
   }
@@ -286,17 +278,15 @@ export default class UPnP {
    * @returns {Promise<Element>} The SOAP response body element.
    */
   async mapPort(options) {
-    var normalized = normalizeOpts(options);
-    var remote = normalized.remote;
-    var internal = normalized.internal;
-    var protocol = (options.protocol || "TCP").toUpperCase();
-    var lease = options.ttl || 0;
-    var gateway = await this._findGateway();
-    var serviceType = gateway.serviceType;
-    var controlUrl = gateway.controlUrl;
-    var localIp = internal.host || findLocalIp();
+    const normalized = normalizeOpts(options);
+    const { remote, internal } = normalized;
+    const protocol = (options.protocol || "TCP").toUpperCase();
+    const lease = options.ttl || 0;
+    const gateway = await this._findGateway();
+    const { serviceType, controlUrl } = gateway;
+    const localIp = internal.host || findLocalIp();
 
-    var args = {
+    const args = {
       NewRemoteHost: remote.host || "",
       NewExternalPort: remote.port,
       NewProtocol: protocol,
@@ -311,7 +301,7 @@ export default class UPnP {
       return await soapRequest(controlUrl, serviceType, "AddPortMapping", args);
     } catch (err) {
       // Error code 718: mapping already exists. Remove it and try again.
-      if (err.message.indexOf("718") !== -1) {
+      if (err.message.includes("718")) {
         await this.unmapPort(options);
         return await soapRequest(controlUrl, serviceType, "AddPortMapping", args);
       }
@@ -325,12 +315,12 @@ export default class UPnP {
    * @returns {Promise<Element>} The SOAP response body element.
    */
   async unmapPort(options) {
-    var normalized = normalizeOpts(options);
-    var remote = normalized.remote;
-    var protocol = (options.protocol || "TCP").toUpperCase();
-    var gateway = await this._findGateway();
-    var serviceType = gateway.serviceType;
-    var controlUrl = gateway.controlUrl;
+    const normalized = normalizeOpts(options);
+    const { remote } = normalized;
+    const protocol = (options.protocol || "TCP").toUpperCase();
+    const gateway = await this._findGateway();
+    const { serviceType, controlUrl } = gateway;
+    
     return soapRequest(controlUrl, serviceType, "DeletePortMapping", {
       NewRemoteHost: remote.host || "",
       NewExternalPort: remote.port,
@@ -343,11 +333,10 @@ export default class UPnP {
    * @returns {Promise<string|null>} The external IP address, or null if unavailable.
    */
   async getExternalIp() {
-    var gateway = await this._findGateway();
-    var serviceType = gateway.serviceType;
-    var controlUrl = gateway.controlUrl;
-    var body = await soapRequest(controlUrl, serviceType, "GetExternalIPAddress");
-    var externalIp = body.getElementsByTagName("NewExternalIPAddress")[0];
+    const gateway = await this._findGateway();
+    const { serviceType, controlUrl } = gateway;
+    const body = await soapRequest(controlUrl, serviceType, "GetExternalIPAddress");
+    const externalIp = body.getElementsByTagName("NewExternalIPAddress")[0];
     return externalIp ? externalIp.textContent : null;
   }
 
@@ -356,24 +345,23 @@ export default class UPnP {
    * @param {object} [options={}] - Options to filter mappings.
    * @returns {Promise<Array>} Array of port mapping objects.
    */
-  async getMappings(options) {
-    options = options || {};
-    var mappings = [];
-    var index = 0;
-    var firstErrorOnZero = false;
+  async getMappings(options = {}) {
+    const mappings = [];
+    let index = 0;
+    let firstErrorOnZero = false;
 
     while (true) {
       try {
-        var gateway = await this._findGateway();
-        var controlUrl = gateway.controlUrl;
-        var serviceType = gateway.serviceType;
-        var body = await soapRequest(controlUrl, serviceType, "GetGenericPortMappingEntry", {
+        const gateway = await this._findGateway();
+        const { controlUrl, serviceType } = gateway;
+        const body = await soapRequest(controlUrl, serviceType, "GetGenericPortMappingEntry", {
           NewPortMappingIndex: index
         });
-        var responseEl = body.firstElementChild;
-        if (!responseEl || responseEl.tagName.indexOf("GetGenericPortMappingEntryResponse") === -1) {
+        const responseEl = body.firstElementChild;
+        if (!responseEl || !responseEl.tagName.includes("GetGenericPortMappingEntryResponse")) {
           break;
         }
+        
         mappings.push({
           public: {
             host: extractTextFromTag(responseEl, "NewRemoteHost") || "",
@@ -401,13 +389,11 @@ export default class UPnP {
     }
 
     if (options.local) {
-      var localIp = (options.internal && options.internal.host) || findLocalIp();
-      return mappings.filter(function(mapping) {
-        return mapping.private.host === localIp;
-      });
+      let localIp = (options.internal && options.internal.host) || findLocalIp();
+      return mappings.filter((mapping) => mapping.private.host === localIp);
     }
     if (options.description) {
-      return mappings.filter(function(mapping) {
+      return mappings.filter((mapping) => {
         if (options.description instanceof RegExp) {
           return options.description.test(mapping.description);
         }
