@@ -1,9 +1,35 @@
 {
+  "name": "upnp-portmap",
+  "version": "1.0.0",
+  "description": "A minimal UPnP port mapping library for Node.js",
   "type": "module",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node tests.js"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.9.7"
-  }
+  },
+  "keywords": [
+    "upnp",
+    "nat",
+    "port-mapping",
+    "port-forwarding",
+    "networking"
+  ],
+  "author": {
+    "name": "Potomac Softworks"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/potomac-softworks/upnp-portmap.git"
+  },
+  "bugs": {
+    "url": "https://github.com/potomac-softworks/upnp-portmap/issues"
+  },
+  "homepage": "https://github.com/potomac-softworks/upnp-portmap#readme"
 }
