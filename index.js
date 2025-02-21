@@ -1,6 +1,6 @@
-import { networkInterfaces } from "os";
-import { Buffer } from "buffer";
-import { createSocket } from "dgram";
+import { Buffer } from "node:buffer";
+import { createSocket } from "node:dgram";
+import { networkInterfaces } from "node:os";
 import { DOMParser } from "@xmldom/xmldom";
 
 const DEFAULT_TIMEOUT = 3000;
@@ -54,7 +54,7 @@ function normalizePort(port) {
 function normalizeOpts(opts = {}) {
   return {
     remote: normalizePort(opts.public),
-    internal: normalizePort(opts.private)
+    internal: normalizePort(opts.private),
   };
 }
 
@@ -69,7 +69,7 @@ function findGateway(timeout = DEFAULT_TIMEOUT) {
     const msg = Buffer.from(
       "M-SEARCH * HTTP/1.1\r\n" +
         "HOST: 239.255.255.250:1900\r\n" +
-        "MAN: \"ssdp:discover\"\r\n" +
+        'MAN: "ssdp:discover"\r\n' +
         "MX: 3\r\n" +
         "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n"
     );
@@ -190,9 +190,9 @@ async function soapRequest(url, serviceType, action, args = {}) {
     method: "POST",
     headers: {
       "Content-Type": 'text/xml; charset="utf-8"',
-      SOAPAction: `"${serviceType}#${action}"`
+      "SOAPAction": `"${serviceType}#${action}"`,
     },
-    body: envelope
+    body: envelope,
   });
   const text = await res.text();
   const doc = parseXml(text);
@@ -245,14 +245,14 @@ export default class UPnP {
     const desc = await fetchXml(location);
     const root = desc.documentElement;
     const device = root.getElementsByTagName("device")[0];
-    
+
     if (!device) {
       throw new Error("Invalid device description: no device element found");
     }
 
     const service = searchService(device, [
       "urn:schemas-upnp-org:service:WANIPConnection:1",
-      "urn:schemas-upnp-org:service:WANPPPConnection:1"
+      "urn:schemas-upnp-org:service:WANPPPConnection:1",
     ]);
     if (!service) throw new Error("UPnP service not found in device description");
 
@@ -267,7 +267,7 @@ export default class UPnP {
 
     this._gateway = {
       serviceType: extractTextFromTag(service, "serviceType"),
-      controlUrl
+      controlUrl,
     };
     return this._gateway;
   }
@@ -294,7 +294,7 @@ export default class UPnP {
       NewInternalClient: localIp,
       NewEnabled: 1,
       NewPortMappingDescription: options.description || "nat-upnp",
-      NewLeaseDuration: lease
+      NewLeaseDuration: lease,
     };
 
     try {
@@ -320,11 +320,11 @@ export default class UPnP {
     const protocol = (options.protocol || "TCP").toUpperCase();
     const gateway = await this._findGateway();
     const { serviceType, controlUrl } = gateway;
-    
+
     return soapRequest(controlUrl, serviceType, "DeletePortMapping", {
       NewRemoteHost: remote.host || "",
       NewExternalPort: remote.port,
-      NewProtocol: protocol
+      NewProtocol: protocol,
     });
   }
 
@@ -355,26 +355,26 @@ export default class UPnP {
         const gateway = await this._findGateway();
         const { controlUrl, serviceType } = gateway;
         const body = await soapRequest(controlUrl, serviceType, "GetGenericPortMappingEntry", {
-          NewPortMappingIndex: index
+          NewPortMappingIndex: index,
         });
         const responseEl = body.firstElementChild;
         if (!responseEl || !responseEl.tagName.includes("GetGenericPortMappingEntryResponse")) {
           break;
         }
-        
+
         mappings.push({
           public: {
             host: extractTextFromTag(responseEl, "NewRemoteHost") || "",
-            port: Number(extractTextFromTag(responseEl, "NewExternalPort"))
+            port: Number(extractTextFromTag(responseEl, "NewExternalPort")),
           },
           private: {
             host: extractTextFromTag(responseEl, "NewInternalClient"),
-            port: Number(extractTextFromTag(responseEl, "NewInternalPort"))
+            port: Number(extractTextFromTag(responseEl, "NewInternalPort")),
           },
           protocol: extractTextFromTag(responseEl, "NewProtocol").toLowerCase(),
           enabled: extractTextFromTag(responseEl, "NewEnabled") === "1",
           description: extractTextFromTag(responseEl, "NewPortMappingDescription"),
-          ttl: Number(extractTextFromTag(responseEl, "NewLeaseDuration"))
+          ttl: Number(extractTextFromTag(responseEl, "NewLeaseDuration")),
         });
         index++;
       } catch (err) {
@@ -403,3 +403,4 @@ export default class UPnP {
     return mappings;
   }
 }
+
