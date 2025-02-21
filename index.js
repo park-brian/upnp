@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { Buffer } from "node:buffer";
 import { createSocket } from "node:dgram";
 import { fileURLToPath } from "node:url";
