@@ -221,11 +221,11 @@ async function soapRequest(url, serviceType, action, args) {
 }
 
 /**
- * Class for performing NAT UPnP operations.
+ * Class for performing UPnP operations.
  */
-export default class NatUpnp {
+export default class UPnP {
   /**
-   * Creates an instance of NatUpnp.
+   * Creates an instance of UPnP.
    * @param {number} [timeout=DEFAULT_TIMEOUT] - Discovery timeout in milliseconds.
    */
   constructor(timeout) {
