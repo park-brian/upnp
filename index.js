@@ -1,6 +1,9 @@
 import { Buffer } from "node:buffer";
 import { createSocket } from "node:dgram";
+import { fileURLToPath } from "node:url";
 import { networkInterfaces } from "node:os";
+import { parseArgs } from "node:util";
+import { realpathSync } from "node:fs";
 import { DOMParser } from "@xmldom/xmldom";
 
 const DEFAULT_TIMEOUT = 3000;
@@ -404,3 +407,77 @@ export default class UPnP {
   }
 }
 
+
+if (realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  (async function main() {
+    const args = process.argv.slice(2);
+    const usage = `Usage:
+    upnp-portmap <public> <private> [protocol] [description] [ttl]
+    upnp-portmap --public <port> --private <port> [--protocol TCP] [--description desc] [--ttl 0]`;
+
+    const options = args.some((arg) => arg.startsWith("--"))
+      ? parseArgs({
+          options: {
+            public: { type: "number" },
+            private: { type: "number" },
+            protocol: { type: "string", default: "TCP" },
+            description: { type: "string", default: "nat-upnp" },
+            ttl: { type: "number", default: 0 },
+          },
+        }).values
+      : {
+          public: Number(args[0]),
+          private: Number(args[1]),
+          protocol: args[2] || "TCP",
+          description: args[3] || "nat-upnp",
+          ttl: args[4] ? Number(args[4]) : 0,
+        };
+
+    if (!options.public || !options.private || isNaN(options.public) || isNaN(options.private)) {
+      console.error("Error: Valid public and private ports required\n" + usage);
+      process.exit(1);
+    }
+
+    const upnp = new UPnP();
+    let currentIp;
+    let checkInterval;
+
+    async function cleanup() {
+      clearInterval(checkInterval);
+      try {
+        await upnp.unmapPort(options);
+        console.log(`Unmapped port ${options.public}`);
+      } catch (err) {
+        console.error("Error unmapping port:", err);
+      }
+      process.exit(0);
+    }
+
+    process.on("SIGINT", cleanup);
+    process.on("SIGTERM", cleanup);
+
+    try {
+      console.log(`Mapping ${options.protocol}: external ${options.public} -> internal ${options.private}`);
+      await upnp.mapPort(options);
+      currentIp = await upnp.getExternalIp();
+      console.log(`Success! External IP: http://${currentIp}:${options.public}`);
+      console.log("Press Ctrl+C to unmap port and exit");
+
+      // Periodically check external IP and acquire new mapping if it changes.
+      checkInterval = setInterval(async () => {
+        try {
+          const newIp = await upnp.getExternalIp();
+          if (newIp !== currentIp) {
+            currentIp = newIp;
+            console.log(`External IP changed: http://${currentIp}:${options.public}`);
+          }
+        } catch (err) {
+          console.error("Error checking external IP:", err);
+        }
+      }, 5 * 60 * 1000);
+    } catch (err) {
+      console.error("Error mapping port:", err);
+      process.exit(1);
+    }
+  })();
+}
