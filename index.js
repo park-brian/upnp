@@ -11,36 +11,6 @@ import { DOMParser } from "@xmldom/xmldom";
 const DEFAULT_TIMEOUT = 3000;
 
 /**
- * Parses an XML string into a Document.
- * @param {string} xmlString - The XML string to parse.
- * @returns {Document} The parsed XML document.
- */
-function parseXml(xmlString) {
-  return new DOMParser().parseFromString(xmlString, "application/xml");
-}
-
-/**
- * Utility to extract text content from the first element with a given tag.
- * @param {Element} parentEl - The parent element to search within.
- * @param {string} tag - The tag name to search for.
- * @returns {string} The text content if found; otherwise, an empty string.
- */
-function extractTextFromTag(parentEl, tag) {
-  const el = parentEl.getElementsByTagName(tag)[0];
-  return el ? el.textContent : "";
-}
-
-/**
- * Finds the local IPv4 address (non-internal).
- * @returns {string} The local IP address, or "127.0.0.1" if none is found.
- */
-function findLocalIp() {
-  const nets = Object.values(networkInterfaces()).flat();
-  const info = nets.find((net) => net.family === "IPv4" && !net.internal);
-  return info ? info.address : "127.0.0.1";
-}
-
-/**
  * Normalizes a port input into an object with a port property.
  * @param {number|string|object} port - The port value or configuration.
  * @returns {object} An object containing the port property.
@@ -64,16 +34,49 @@ function normalizeOpts(opts = {}) {
 }
 
 /**
+ * Fetches XML from a URL and returns the parsed document.
+ * @param {string} url - The URL to fetch the XML from.
+ * @returns {Promise<Document>} The parsed XML document.
+ */
+export async function fetchXml(url, requestInit) {
+  const res = await fetch(url, requestInit);
+  const text = await res.text();
+  return new DOMParser().parseFromString(text, "application/xml");
+}
+
+/**
+ * Utility to extract text content from the first element with a given tag.
+ * @param {Element} parentEl - The parent element to search within.
+ * @param {string} tag - The tag name to search for.
+ * @returns {string} The text content if found; otherwise, an empty string.
+ */
+export function getTagContent(parentEl, tag) {
+  return parentEl.getElementsByTagName(tag)[0]?.textContent || "";
+}
+
+/**
+ * Finds the local IPv4 address (non-internal).
+ * @returns {string} The local IP address, or "127.0.0.1" if none is found.
+ */
+export function findLocalIp() {
+  const nets = Object.values(networkInterfaces()).flat();
+  const info = nets.find((net) => net.family === "IPv4" && !net.internal);
+  return info ? info.address : "127.0.0.1";
+}
+
+/**
  * Discovers the UPnP gateway using SSDP.
  * @param {number} [timeout=DEFAULT_TIMEOUT] - Timeout in milliseconds.
  * @returns {Promise<object>} Resolves with an object containing the gateway location.
  */
-function findGateway(timeout = DEFAULT_TIMEOUT) {
+export function findGateway(timeout = DEFAULT_TIMEOUT) {
   return new Promise((resolve, reject) => {
     const sock = createSocket("udp4");
+    const host = "239.255.255.250";
+    const port = 1900;
     const msg = Buffer.from(
       "M-SEARCH * HTTP/1.1\r\n" +
-        "HOST: 239.255.255.250:1900\r\n" +
+        `HOST: ${host}:${port}\r\n` +
         'MAN: "ssdp:discover"\r\n' +
         "MX: 3\r\n" +
         "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n\r\n"
@@ -93,15 +96,17 @@ function findGateway(timeout = DEFAULT_TIMEOUT) {
     sock.on("message", (data) => {
       clearTimeout(timer);
       sock.close();
-      const match = data.toString().match(/LOCATION:\s*(.*)/i);
-      if (match && match[1]) {
-        resolve({ location: match[1].trim() });
+      const location = String(data)
+        .match(/LOCATION:\s*(.*)/i)?.[1]
+        ?.trim();
+      if (location) {
+        resolve({ location });
       } else {
         reject(new Error("No LOCATION header found in response"));
       }
     });
 
-    sock.send(msg, 1900, "239.255.255.250", (err) => {
+    sock.send(msg, port, host, (err) => {
       if (err) {
         clearTimeout(timer);
         sock.close();
@@ -112,23 +117,12 @@ function findGateway(timeout = DEFAULT_TIMEOUT) {
 }
 
 /**
- * Fetches XML from a URL and returns the parsed document.
- * @param {string} url - The URL to fetch the XML from.
- * @returns {Promise<Document>} The parsed XML document.
- */
-async function fetchXml(url) {
-  const res = await fetch(url);
-  const text = await res.text();
-  return parseXml(text);
-}
-
-/**
  * Recursively searches a device element for a service matching one of the given types.
  * @param {Element} device - The device element to search.
  * @param {string[]} types - Array of service types to match.
  * @returns {Element|null} The matching service element, or null if not found.
  */
-function searchService(device, types) {
+export function searchService(device, types) {
   if (!device) return null;
 
   // Search within serviceList
@@ -157,30 +151,6 @@ function searchService(device, types) {
 }
 
 /**
- * Constructs a SOAP envelope for the given service action and arguments.
- * @param {string} serviceType - The service type.
- * @param {string} action - The action to perform.
- * @param {object} [args={}] - Action arguments.
- * @returns {string} The SOAP envelope as an XML string.
- */
-function buildSoapEnvelope(serviceType, action, args = {}) {
-  const argsXml = Object.entries(args)
-    .map(([key, val]) => `<${key}>${val}</${key}>`)
-    .join("");
-
-  return (
-    '<?xml version="1.0"?>' +
-    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" ' +
-    's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">' +
-    "<s:Body>" +
-    `<u:${action} xmlns:u="${serviceType}">` +
-    argsXml +
-    `</u:${action}>` +
-    "</s:Body></s:Envelope>"
-  );
-}
-
-/**
  * Sends a SOAP request and returns the response body.
  * @param {string} url - The control URL.
  * @param {string} serviceType - The service type.
@@ -189,26 +159,37 @@ function buildSoapEnvelope(serviceType, action, args = {}) {
  * @returns {Promise<Element>} The SOAP response body element.
  * @throws {Error} If a SOAP fault is encountered.
  */
-async function soapRequest(url, serviceType, action, args = {}) {
-  const envelope = buildSoapEnvelope(serviceType, action, args);
-  const res = await fetch(url, {
+export async function soapRequest(url, serviceType, action, args = {}) {
+  const xmlArgs = Object.entries(args)
+    .map(([key, val]) => `<${key}>${val}</${key}>`)
+    .join("");
+
+  const xmlEnvelope =
+    '<?xml version="1.0"?>' +
+    '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" ' +
+    's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">' +
+    "<s:Body>" +
+    `<u:${action} xmlns:u="${serviceType}">` +
+    xmlArgs +
+    `</u:${action}>` +
+    "</s:Body></s:Envelope>";
+
+  const doc = await fetchXml(url, {
     method: "POST",
     headers: {
       "Content-Type": 'text/xml; charset="utf-8"',
       "SOAPAction": `"${serviceType}#${action}"`,
     },
-    body: envelope,
+    body: xmlEnvelope,
   });
-  const text = await res.text();
-  const doc = parseXml(text);
 
   // Check for SOAP fault
   const fault = doc.getElementsByTagNameNS("http://schemas.xmlsoap.org/soap/envelope/", "Fault")[0];
   if (fault) {
     const upnpError = fault.getElementsByTagName("UPnPError")[0];
     if (upnpError) {
-      const errorCode = extractTextFromTag(upnpError, "errorCode");
-      const errorDescription = extractTextFromTag(upnpError, "errorDescription");
+      const errorCode = getTagContent(upnpError, "errorCode");
+      const errorDescription = getTagContent(upnpError, "errorDescription");
       throw new Error(`UPnPError ${errorCode}: ${errorDescription}`);
     }
     throw new Error("SOAP fault encountered");
@@ -261,17 +242,17 @@ export default class UPnP {
     ]);
     if (!service) throw new Error("UPnP service not found in device description");
 
-    let controlUrl = extractTextFromTag(service, "controlURL");
+    let controlUrl = getTagContent(service, "controlURL");
     if (!controlUrl) {
       throw new Error("Control URL not found in service description");
     }
     if (!/^https?:\/\//i.test(controlUrl)) {
-      const base = extractTextFromTag(root, "URLBase") || location;
+      const base = getTagContent(root, "URLBase") || location;
       controlUrl = new URL(controlUrl, base).href;
     }
 
     this._gateway = {
-      serviceType: extractTextFromTag(service, "serviceType"),
+      serviceType: getTagContent(service, "serviceType"),
       controlUrl,
     };
     return this._gateway;
@@ -369,17 +350,17 @@ export default class UPnP {
 
         mappings.push({
           public: {
-            host: extractTextFromTag(responseEl, "NewRemoteHost") || "",
-            port: Number(extractTextFromTag(responseEl, "NewExternalPort")),
+            host: getTagContent(responseEl, "NewRemoteHost"),
+            port: Number(getTagContent(responseEl, "NewExternalPort")),
           },
           private: {
-            host: extractTextFromTag(responseEl, "NewInternalClient"),
-            port: Number(extractTextFromTag(responseEl, "NewInternalPort")),
+            host: getTagContent(responseEl, "NewInternalClient"),
+            port: Number(getTagContent(responseEl, "NewInternalPort")),
           },
-          protocol: extractTextFromTag(responseEl, "NewProtocol").toLowerCase(),
-          enabled: extractTextFromTag(responseEl, "NewEnabled") === "1",
-          description: extractTextFromTag(responseEl, "NewPortMappingDescription"),
-          ttl: Number(extractTextFromTag(responseEl, "NewLeaseDuration")),
+          protocol: getTagContent(responseEl, "NewProtocol").toLowerCase(),
+          enabled: getTagContent(responseEl, "NewEnabled") === "1",
+          description: getTagContent(responseEl, "NewPortMappingDescription"),
+          ttl: Number(getTagContent(responseEl, "NewLeaseDuration")),
         });
         index++;
       } catch (err) {
@@ -408,7 +389,6 @@ export default class UPnP {
     return mappings;
   }
 }
-
 
 if (realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   (async function main() {
@@ -462,7 +442,7 @@ if (realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url
       console.log(`Mapping ${options.protocol}: external ${options.public} -> internal ${options.private}`);
       await upnp.mapPort(options);
       currentIp = await upnp.getExternalIp();
-      console.log(`Success! External IP: http://${currentIp}:${options.public}`);
+      console.log(`Success! External IP: ${currentIp}:${options.public}`);
       console.log("Press Ctrl+C to unmap port and exit");
 
       // Periodically check external IP and acquire new mapping if it changes.
@@ -471,7 +451,7 @@ if (realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url
           const newIp = await upnp.getExternalIp();
           if (newIp !== currentIp) {
             currentIp = newIp;
-            console.log(`External IP changed: http://${currentIp}:${options.public}`);
+            console.log(`External IP changed: ${currentIp}:${options.public}`);
           }
         } catch (err) {
           console.error("Error checking external IP:", err);
